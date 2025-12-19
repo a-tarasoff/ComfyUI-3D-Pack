@@ -5216,6 +5216,10 @@ class Load_Hunyuan3D_21_ShapeGen_Pipeline:
 
     _REPO_ID_BASE = "tencent"
     _REPO_NAME = "Hunyuan3D-2.1"
+    
+    # Pipeline cache for reusing loaded models
+    _cached_pipeline = None
+    _cached_subfolder = None
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -5261,16 +5265,54 @@ class Load_Hunyuan3D_21_ShapeGen_Pipeline:
             print(f"Hunyuan3D-2.1 ShapeGen weights already loaded")
         
         return base_dir
+    
+    @classmethod
+    def _is_pipeline_valid(cls, pipeline):
+        """Check if cached pipeline has all required components including scheduler."""
+        if pipeline is None:
+            return False
+        # Check scheduler exists and is valid (may be deleted by auto_cleanup)
+        if not hasattr(pipeline, 'scheduler') or pipeline.scheduler is None:
+            return False
+        # Check other essential components
+        if not hasattr(pipeline, 'model') or pipeline.model is None:
+            return False
+        if not hasattr(pipeline, 'vae') or pipeline.vae is None:
+            return False
+        return True
 
     def load(self, subfolder):
+        cls = Load_Hunyuan3D_21_ShapeGen_Pipeline
+        
+        # Check if we have a valid cached pipeline with scheduler intact
+        if (cls._cached_pipeline is not None 
+            and cls._cached_subfolder == subfolder
+            and cls._is_pipeline_valid(cls._cached_pipeline)):
+            print("Hunyuan3D-2.1 ShapeGen: Using cached pipeline")
+            return (cls._cached_pipeline,)
+        
+        # Cache invalid or scheduler missing - force reload
+        if cls._cached_pipeline is not None:
+            print("Hunyuan3D-2.1 ShapeGen: Cached pipeline invalid (scheduler or components missing), reloading...")
+            # Clear the invalid cached pipeline
+            cls._cached_pipeline = None
+            cls._cached_subfolder = None
+            torch.cuda.empty_cache()
+            gc.collect()
+        
         base_dir = self._ensure_weights(subfolder)
         
+        print(f"Hunyuan3D-2.1 ShapeGen: Loading pipeline from {subfolder}...")
         pipeline = Hunyuan3DDiTFlowMatchingPipeline_2_1.from_pretrained(
             base_dir,
             subfolder=subfolder,
             use_safetensors=False,
             device="cuda",
         )
+        
+        # Cache the pipeline
+        cls._cached_pipeline = pipeline
+        cls._cached_subfolder = subfolder
         
         return (pipeline,)
 
@@ -5448,17 +5490,39 @@ class Hunyuan3D_21_ShapeGen:
         # Auto cleanup pipeline if enabled
         if auto_cleanup:
             try:
+                # Store scheduler config before cleanup so it can be restored
+                # (scheduler is lightweight and needed for subsequent runs)
+                scheduler_config = None
+                scheduler_class = None
+                if hasattr(shapegen_pipe, 'scheduler') and shapegen_pipe.scheduler is not None:
+                    scheduler_config = shapegen_pipe.scheduler.config
+                    scheduler_class = type(shapegen_pipe.scheduler)
+                
                 shapegen_pipe.to('cpu')
-                if hasattr(shapegen_pipe, 'unet'):
-                    del shapegen_pipe.unet
+                if hasattr(shapegen_pipe, 'model'):
+                    del shapegen_pipe.model
+                    shapegen_pipe.model = None
+                if hasattr(shapegen_pipe, 'conditioner'):
+                    del shapegen_pipe.conditioner
+                    shapegen_pipe.conditioner = None
                 if hasattr(shapegen_pipe, 'vae'):
                     del shapegen_pipe.vae
-                if hasattr(shapegen_pipe, 'scheduler'):
-                    del shapegen_pipe.scheduler
+                    shapegen_pipe.vae = None
+                # Note: We don't delete scheduler - it's lightweight and needed for pipeline reuse
                 del outputs
                 torch.cuda.empty_cache()
                 gc.collect()
-                print("Shape pipeline cleaned up")
+                
+                # Restore scheduler if it was accidentally deleted or to ensure it exists
+                if scheduler_config is not None and scheduler_class is not None:
+                    if not hasattr(shapegen_pipe, 'scheduler') or shapegen_pipe.scheduler is None:
+                        shapegen_pipe.scheduler = scheduler_class.from_config(scheduler_config)
+                
+                # Invalidate the loader cache since heavy models are cleaned up
+                Load_Hunyuan3D_21_ShapeGen_Pipeline._cached_pipeline = None
+                Load_Hunyuan3D_21_ShapeGen_Pipeline._cached_subfolder = None
+                
+                print("Shape pipeline cleaned up (heavy models removed, scheduler preserved)")
             except Exception as e:
                 print(f"Error during pipeline cleanup: {e}")
             

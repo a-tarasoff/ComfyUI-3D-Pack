@@ -30,7 +30,14 @@ class Light_Shadow_Remover():
             torch_dtype=torch.float16,
             safety_checker=None,
         )
-        pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(pipeline.scheduler.config)
+        # Convert scheduler config values to CPU/numpy if they're CUDA tensors (PyTorch 2.9+ compatibility)
+        scheduler_config = {}
+        for k, v in pipeline.scheduler.config.items():
+            if hasattr(v, 'cpu'):  # It's a tensor
+                scheduler_config[k] = v.cpu().numpy() if hasattr(v, 'numpy') else v.cpu()
+            else:
+                scheduler_config[k] = v
+        pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(scheduler_config)
         pipeline.set_progress_bar_config(disable=True)
 
         self.pipeline = pipeline.to(self.device, torch.float16)
