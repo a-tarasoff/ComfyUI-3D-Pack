@@ -2,6 +2,7 @@ import os
 import gc
 import math
 import copy
+import time
 from enum import Enum
 from collections import OrderedDict
 import folder_paths as comfy_paths
@@ -5293,7 +5294,6 @@ class Load_Hunyuan3D_21_ShapeGen_Pipeline:
         """
         if cls._cached_pipeline is None or not cls._is_pipeline_valid(cls._cached_pipeline):
             # Return unique value to force re-execution
-            import time
             return time.time()
         # Return stable value when pipeline is valid (allows ComfyUI to use cached output)
         return cls._cached_subfolder
