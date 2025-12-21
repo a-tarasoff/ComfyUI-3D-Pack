@@ -109,6 +109,22 @@ try:
     
     # Install packages that needs specify remote url
     install_remote_packages(build_config.build_base_packages)
+    
+    # ============================================================================
+    # FIX: Pin NumPy and scipy BEFORE installing other packages
+    # Required because numba (via pymatting) doesn't support NumPy 2.x
+    # ============================================================================
+    cstr("Pinning NumPy and scipy to compatible versions...").msg.print()
+    numpy_scipy_pin_result = subprocess.run(
+        [PYTHON_PATH, "-m", "pip", "install", "numpy<2.0", "scipy<=1.15", "--upgrade"],
+        text=True, capture_output=True
+    )
+    if numpy_scipy_pin_result.returncode == 0:
+        cstr("Successfully pinned numpy<2.0 and scipy<=1.15").msg.print()
+    else:
+        cstr(f"Warning: Failed to pin NumPy/scipy: {numpy_scipy_pin_result.stderr}").warning.print()
+    # ============================================================================
+    
     install_platform_packages()
     
     # Install packages requiring special flags (like --no-build-isolation)
