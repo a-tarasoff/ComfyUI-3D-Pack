@@ -5268,18 +5268,35 @@ class Load_Hunyuan3D_21_ShapeGen_Pipeline:
     
     @classmethod
     def _is_pipeline_valid(cls, pipeline):
-        """Check if cached pipeline has all required components including scheduler."""
+        """Check if cached pipeline has all required components including scheduler and conditioner."""
         if pipeline is None:
             return False
         # Check scheduler exists and is valid (may be deleted by auto_cleanup)
         if not hasattr(pipeline, 'scheduler') or pipeline.scheduler is None:
             return False
-        # Check other essential components
+        # Check other essential components (conditioner, model, vae - all deleted by auto_cleanup)
+        if not hasattr(pipeline, 'conditioner') or pipeline.conditioner is None:
+            return False
         if not hasattr(pipeline, 'model') or pipeline.model is None:
             return False
         if not hasattr(pipeline, 'vae') or pipeline.vae is None:
             return False
         return True
+    
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        """Force re-execution when pipeline was invalidated by auto_cleanup.
+        
+        ComfyUI caches node outputs, so even if we invalidate _cached_pipeline,
+        ComfyUI might return the same corrupted pipeline object. This method
+        returns a changing value when the pipeline is invalid, forcing reload.
+        """
+        if cls._cached_pipeline is None or not cls._is_pipeline_valid(cls._cached_pipeline):
+            # Return unique value to force re-execution
+            import time
+            return time.time()
+        # Return stable value when pipeline is valid (allows ComfyUI to use cached output)
+        return cls._cached_subfolder
 
     def load(self, subfolder):
         cls = Load_Hunyuan3D_21_ShapeGen_Pipeline
