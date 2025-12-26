@@ -671,6 +671,9 @@ class Decimate_Mesh:
     def process_mesh(self, mesh, target, remesh, optimalplacement):
         vertices, faces = decimate_mesh(mesh.v.detach().cpu().numpy(), mesh.f.detach().cpu().numpy(), target, remesh, optimalplacement)
         mesh.v, mesh.f = torch.from_numpy(vertices).to(DEVICE), torch.from_numpy(faces).to(torch.int64).to(DEVICE)
+        # Clear texture coordinates - they become invalid after decimation
+        mesh.vt = None
+        mesh.ft = None
         mesh.auto_normal()
         return (mesh,)
 
