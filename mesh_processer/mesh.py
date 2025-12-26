@@ -564,7 +564,7 @@ class Mesh:
             vmapping: tensor array
         """
         ft = self.ft.view(-1).long()
-        f = self.f.view(-1).long()
+        f = self.f.reshape(-1).long()
         vmapping = torch.zeros(self.vt.shape[0], dtype=torch.long, device=self.device)
         vmapping[ft] = f # scatter, randomly choose one if index is not unique
         return vmapping
